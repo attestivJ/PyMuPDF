@@ -593,6 +593,9 @@ JM_make_spanlist(fz_context *ctx, PyObject *line_dict,
             DICT_SETITEM_DROP(char_dict, dictkey_bbox,
                           JM_py_from_rect(r));
 
+	    DICT_SETITEM_DROP(char_dict, dictkey_render_mode,
+			      Py_BuildValue("i", ch->render_mode));
+
             DICT_SETITEM_DROP(char_dict, dictkey_c,
                           Py_BuildValue("C", ch->c));
 
@@ -639,15 +642,36 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
     fz_compressed_buffer *buffer = fz_compressed_image_buffer(ctx, image);
     fz_var(buf);
     fz_var(freebuf);
+
+    fz_compressed_buffer *maskbuffer = NULL;
+    fz_buffer * freemask = NULL;
+    fz_buffer * maskbuf = NULL;
+    fz_var(freemask);
+    fz_var(maskbuf);
+    if (image->mask != NULL) {
+      maskbuffer = fz_compressed_image_buffer(ctx, image->mask);
+    }
+    const char * maskext = NULL;
+
     int n = fz_colorspace_n(ctx, image->colorspace);
     int w = image->w;
     int h = image->h;
     const char *ext = NULL;
+
     int type = FZ_IMAGE_UNKNOWN;
     if (buffer)
         type = buffer->params.type;
     if (type < FZ_IMAGE_BMP || type == FZ_IMAGE_JBIG2)
         type = FZ_IMAGE_UNKNOWN;
+    
+    int mask_type = FZ_IMAGE_UNKNOWN;
+    if (maskbuffer)
+      mask_type = buffer->params.type;
+    if (mask_type < FZ_IMAGE_BMP || mask_type == FZ_IMAGE_JBIG2)
+      mask_type = FZ_IMAGE_UNKNOWN;
+    PyObject *maskbytes = NULL;
+    fz_var(maskbytes);
+    
     PyObject *bytes = NULL;
     fz_var(bytes);
     fz_try(ctx) {
@@ -659,7 +683,17 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
             ext = "png";
         }
         bytes = JM_BinFromBuffer(ctx, buf);
-    }
+
+	if (maskbuffer && type != FZ_IMAGE_UNKNOWN) {
+	  maskbuf = maskbuffer->buffer;
+	  maskext = JM_image_extension(mask_type);
+	} else {
+	  maskbuf = freemask = fz_new_buffer_from_image_as_png(ctx, image->mask, fz_default_color_params);
+	  maskext = "png";
+	}
+	maskbytes = JM_BinFromBuffer(ctx, maskbuf);
+    } 
+	
     fz_always(ctx) {
         if (!bytes)
             bytes = JM_BinFromChar("");
@@ -681,9 +715,14 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
                         JM_py_from_matrix(block->u.i.transform));
         DICT_SETITEM_DROP(block_dict, dictkey_size,
                         Py_BuildValue("n", (Py_ssize_t) fz_image_size(ctx, image)));
+	DICT_SETITEM_DROP(block_dict, dictkey_is_mask, Py_BuildValue("i", image->imagemask));
         DICT_SETITEM_DROP(block_dict, dictkey_image, bytes);
+	if (maskbuffer) 
+	  DICT_SETITEM_DROP(block_dict, dictkey_mask, maskbytes);
 
         fz_drop_buffer(ctx, freebuf);
+	if (maskbuffer)
+	  fz_drop_buffer(ctx, maskbuf);
     }
     fz_catch(ctx) {;}
     return;
@@ -704,6 +743,7 @@ static void JM_make_text_block(fz_context *ctx, fz_stext_block *block, PyObject 
         block_rect = fz_union_rect(block_rect, line_rect);
         DICT_SETITEM_DROP(line_dict, dictkey_wmode,
                     Py_BuildValue("i", line->wmode));
+	DICT_SETITEM_DROP(line_dict, dictkey_render_mode, Py_BuildValue("i", line->first_char->render_mode));
         DICT_SETITEM_DROP(line_dict, dictkey_dir, JM_py_from_point(line->dir));
         DICT_SETITEM_DROP(line_dict, dictkey_bbox,
                     JM_py_from_rect(line_rect));

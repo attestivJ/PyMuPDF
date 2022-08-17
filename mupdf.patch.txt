@@ -1,0 +1,159 @@
+diff -r -u mupdf.orig/include/mupdf/fitz/structured-text.h mupdf-1.20.3-source/include/mupdf/fitz/structured-text.h
+--- mupdf.orig/include/mupdf/fitz/structured-text.h	2022-08-03 15:29:37.000000000 -0400
++++ mupdf-1.20.3-source/include/mupdf/fitz/structured-text.h	2022-08-15 17:34:44.000000000 -0400
+@@ -187,6 +187,7 @@
+ {
+ 	int c;
+ 	int color; /* sRGB hex color */
++        int render_mode;
+ 	fz_point origin;
+ 	fz_quad quad;
+ 	float size;
+diff -r -u mupdf.orig/include/mupdf/fitz/text.h mupdf-1.20.3-source/include/mupdf/fitz/text.h
+--- mupdf.orig/include/mupdf/fitz/text.h	2022-08-03 15:29:37.000000000 -0400
++++ mupdf-1.20.3-source/include/mupdf/fitz/text.h	2022-08-15 17:16:53.000000000 -0400
+@@ -68,6 +68,7 @@
+ 	fz_font *font;
+ 	fz_matrix trm;
+ 	unsigned wmode : 1;		/* 0 horizontal, 1 vertical */
++        unsigned render : 3;
+ 	unsigned bidi_level : 7;	/* The bidirectional level of text */
+ 	unsigned markup_dir : 2;	/* The direction of text as marked in the original document */
+ 	unsigned language : 15;		/* The language as marked in the original document */
+diff -r -u mupdf.orig/source/fitz/stext-device.c mupdf-1.20.3-source/source/fitz/stext-device.c
+--- mupdf.orig/source/fitz/stext-device.c	2022-08-03 15:29:37.000000000 -0400
++++ mupdf-1.20.3-source/source/fitz/stext-device.c	2022-08-15 17:39:22.000000000 -0400
+@@ -209,7 +209,7 @@
+ }
+ 
+ static fz_stext_char *
+-add_char_to_line(fz_context *ctx, fz_stext_page *page, fz_stext_line *line, fz_matrix trm, fz_font *font, float size, int c, fz_point *p, fz_point *q, int color)
++add_char_to_line(fz_context *ctx, fz_stext_page *page, fz_stext_line *line, fz_matrix trm, fz_font *font, float size, int c, fz_point *p, fz_point *q, int color, int render_mode)
+ {
+ 	fz_stext_char *ch = fz_pool_alloc(ctx, page->pool, sizeof *line->first_char);
+ 	fz_point a, d;
+@@ -227,6 +227,7 @@
+ 	ch->origin = *p;
+ 	ch->size = size;
+ 	ch->font = fz_keep_font(ctx, font);
++	ch->render_mode = render_mode;
+ 
+ 	if (line->wmode == 0)
+ 	{
+@@ -320,7 +321,7 @@
+ }
+ 
+ static void
+-fz_add_stext_char_imp(fz_context *ctx, fz_stext_device *dev, fz_font *font, int c, int glyph, fz_matrix trm, float adv, int wmode, int force_new_line)
++fz_add_stext_char_imp(fz_context *ctx, fz_stext_device *dev, fz_font *font, int c, int glyph, fz_matrix trm, float adv, int wmode, int render_mode, int force_new_line)
+ {
+ 	fz_stext_page *page = dev->page;
+ 	fz_stext_block *cur_block;
+@@ -392,7 +393,7 @@
+ 	if (cur_line && glyph < 0)
+ 	{
+ 		/* Don't advance pen or break lines for no-glyph characters in a cluster */
+-		add_char_to_line(ctx, page, cur_line, trm, font, size, c, &dev->pen, &dev->pen, dev->color);
++	  add_char_to_line(ctx, page, cur_line, trm, font, size, c, &dev->pen, &dev->pen, dev->color, render_mode);
+ 		dev->lastchar = c;
+ 		return;
+ 	}
+@@ -506,9 +507,9 @@
+ 
+ 	/* Add synthetic space */
+ 	if (add_space && !(dev->flags & FZ_STEXT_INHIBIT_SPACES))
+-		add_char_to_line(ctx, page, cur_line, trm, font, size, ' ', &dev->pen, &p, dev->color);
++	  add_char_to_line(ctx, page, cur_line, trm, font, size, ' ', &dev->pen, &p, dev->color, render_mode);
+ 
+-	add_char_to_line(ctx, page, cur_line, trm, font, size, c, &p, &q, dev->color);
++	add_char_to_line(ctx, page, cur_line, trm, font, size, c, &p, &q, dev->color, render_mode);
+ 	dev->lastchar = c;
+ 	dev->pen = q;
+ 
+@@ -517,7 +518,7 @@
+ }
+ 
+ static void
+-fz_add_stext_char(fz_context *ctx, fz_stext_device *dev, fz_font *font, int c, int glyph, fz_matrix trm, float adv, int wmode, int force_new_line)
++fz_add_stext_char(fz_context *ctx, fz_stext_device *dev, fz_font *font, int c, int glyph, fz_matrix trm, float adv, int wmode, int render_mode, int force_new_line)
+ {
+ 	/* ignore when one unicode character maps to multiple glyphs */
+ 	if (c == -1)
+@@ -528,31 +529,31 @@
+ 		switch (c)
+ 		{
+ 		case 0xFB00: /* ff */
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, 0);
++  		        fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		case 0xFB01: /* fi */
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 'i', -1, trm, 0, wmode, 0);
++		        fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 'i', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		case 0xFB02: /* fl */
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 'l', -1, trm, 0, wmode, 0);
++		        fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 'l', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		case 0xFB03: /* ffi */
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, 0);
+-			fz_add_stext_char_imp(ctx, dev, font, 'i', -1, trm, 0, wmode, 0);
++		        fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, render_mode, 0);
++			fz_add_stext_char_imp(ctx, dev, font, 'i', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		case 0xFB04: /* ffl */
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, 0);
+-			fz_add_stext_char_imp(ctx, dev, font, 'l', -1, trm, 0, wmode, 0);
++		        fz_add_stext_char_imp(ctx, dev, font, 'f', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 'f', -1, trm, 0, wmode, render_mode, 0);
++			fz_add_stext_char_imp(ctx, dev, font, 'l', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		case 0xFB05: /* long st */
+ 		case 0xFB06: /* st */
+-			fz_add_stext_char_imp(ctx, dev, font, 's', glyph, trm, adv, wmode, force_new_line);
+-			fz_add_stext_char_imp(ctx, dev, font, 't', -1, trm, 0, wmode, 0);
++		        fz_add_stext_char_imp(ctx, dev, font, 's', glyph, trm, adv, wmode, render_mode, force_new_line);
++			fz_add_stext_char_imp(ctx, dev, font, 't', -1, trm, 0, wmode, render_mode, 0);
+ 			return;
+ 		}
+ 	}
+@@ -584,7 +585,7 @@
+ 		}
+ 	}
+ 
+-	fz_add_stext_char_imp(ctx, dev, font, c, glyph, trm, adv, wmode, force_new_line);
++	fz_add_stext_char_imp(ctx, dev, font, c, glyph, trm, adv, wmode, render_mode, force_new_line);
+ }
+ 
+ static void
+@@ -622,6 +623,7 @@
+ 			trm,
+ 			adv,
+ 			span->wmode,
++		        span->render,
+ 			(i == 0) && (dev->flags & FZ_STEXT_PRESERVE_SPANS));
+ 	}
+ }
+diff -r -u mupdf.orig/source/pdf/pdf-op-run.c mupdf-1.20.3-source/source/pdf/pdf-op-run.c
+--- mupdf.orig/source/pdf/pdf-op-run.c	2022-08-03 15:29:37.000000000 -0400
++++ mupdf-1.20.3-source/source/pdf/pdf-op-run.c	2022-08-15 22:09:11.000000000 -0400
+@@ -777,6 +777,11 @@
+ 		if (!text->head)
+ 			break;
+ 
++		for (fz_text_span *span = text->head; span; span = span->next)
++		  {
++		    span->render = pr->tos.text_mode;
++		  }
++
+ 		if (dofill || dostroke)
+ 			gstate = pdf_begin_group(ctx, pr, tb, &softmask);
+ 
