@@ -4,11 +4,14 @@ Change Log
 
 **Changes in Version 1.20.2**
 
+* This release uses ``MuPDF-1.20.3``.
+
 * **Fixed** `#1787 <https://github.com/pymupdf/PyMuPDF/issues/1787>`_.
   Fix linking issues on Unix systems.
 
 * **Fixed** `#1824 <https://github.com/pymupdf/PyMuPDF/issues/1824>`_.
-  SegFault when applying redactions overlapping a transparent image
+  SegFault when applying redactions overlapping a transparent image. (Fixed
+  in ``MuPDF-1.20.3``.)
 
 * Improvements to documentation:
 
