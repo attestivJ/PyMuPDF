@@ -447,7 +447,13 @@ def get_mupdf():
             log( f'mupdf_tgz already exists: {mupdf_tgz}')
         else:
             get_mupdf_tgz()
-        return tar_extract( mupdf_tgz, exists='return')
+            mupdf_dir = tar_extract( mupdf_tgz, exists='return')
+            log( f'Patching mupdf.')
+            patchfile = os.path.join(os.getcwd(), "mupdf.patch.txt")
+            command = 'cd ' + mupdf_dir + ' && patch -p1 < ' + patchfile
+            subprocess.run( command, shell=True, check=True)
+            
+        return mupdf_dir
     
     elif path == '':
         # Use system mupdf.
@@ -508,7 +514,7 @@ if ('-h' not in sys.argv and '--help' not in sys.argv
     if mupdf_local:
         log( f'Building mupdf.')
         shutil.copy2( 'fitz/_config.h', f'{mupdf_local}include/mupdf/fitz/config.h')
-    
+        
         if platform.system() == 'Windows' or platform.system().startswith('CYGWIN'):
             # Windows build.
             devenv = os.environ.get('PYMUPDF_SETUP_DEVENV')
