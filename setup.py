@@ -445,6 +445,7 @@ def get_mupdf():
         # Default.
         if os.path.exists( mupdf_tgz):
             log( f'mupdf_tgz already exists: {mupdf_tgz}')
+            mupdf_dir = tar_extract(mupdf_tgz, exists='return')
         else:
             get_mupdf_tgz()
             mupdf_dir = tar_extract( mupdf_tgz, exists='return')
