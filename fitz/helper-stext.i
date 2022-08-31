@@ -666,7 +666,7 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
     
     int mask_type = FZ_IMAGE_UNKNOWN;
     if (maskbuffer)
-      mask_type = buffer->params.type;
+      mask_type = maskbuffer->params.type;
     if (mask_type < FZ_IMAGE_BMP || mask_type == FZ_IMAGE_JBIG2)
       mask_type = FZ_IMAGE_UNKNOWN;
     PyObject *maskbytes = NULL;
@@ -684,14 +684,17 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
         }
         bytes = JM_BinFromBuffer(ctx, buf);
 
-	if (maskbuffer && type != FZ_IMAGE_UNKNOWN) {
+	if (maskbuffer && mask_type != FZ_IMAGE_UNKNOWN) {
 	  maskbuf = maskbuffer->buffer;
 	  maskext = JM_image_extension(mask_type);
 	} else {
-	  maskbuf = freemask = fz_new_buffer_from_image_as_png(ctx, image->mask, fz_default_color_params);
-	  maskext = "png";
+	  if (image->mask) {
+	    maskbuf = freemask = fz_new_buffer_from_image_as_png(ctx, image->mask, fz_default_color_params);
+	    maskext = "png";
+	  }
 	}
-	maskbytes = JM_BinFromBuffer(ctx, maskbuf);
+	if (maskbuf)
+	  maskbytes = JM_BinFromBuffer(ctx, maskbuf);
     } 
 	
     fz_always(ctx) {
@@ -717,12 +720,12 @@ static void JM_make_image_block(fz_context *ctx, fz_stext_block *block, PyObject
                         Py_BuildValue("n", (Py_ssize_t) fz_image_size(ctx, image)));
 	DICT_SETITEM_DROP(block_dict, dictkey_is_mask, Py_BuildValue("i", image->imagemask));
         DICT_SETITEM_DROP(block_dict, dictkey_image, bytes);
-	if (maskbuffer) 
+	if (maskbytes) 
 	  DICT_SETITEM_DROP(block_dict, dictkey_mask, maskbytes);
 
         fz_drop_buffer(ctx, freebuf);
-	if (maskbuffer)
-	  fz_drop_buffer(ctx, maskbuf);
+	if (freemask)
+	  fz_drop_buffer(ctx, freemask);
     }
     fz_catch(ctx) {;}
     return;
@@ -733,6 +736,7 @@ static void JM_make_text_block(fz_context *ctx, fz_stext_block *block, PyObject 
     fz_stext_line *line;
     PyObject *line_list = PyList_New(0), *line_dict;
     fz_rect block_rect = fz_empty_rect;
+
     for (line = block->u.t.first_line; line; line = line->next) {
         if (fz_is_empty_rect(fz_intersect_rect(tp_rect, line->bbox)) &&
             !fz_is_infinite_rect(tp_rect)) {
@@ -751,6 +755,7 @@ static void JM_make_text_block(fz_context *ctx, fz_stext_block *block, PyObject 
     }
     DICT_SETITEM_DROP(block_dict, dictkey_bbox, JM_py_from_rect(block_rect));
     DICT_SETITEM_DROP(block_dict, dictkey_lines, line_list);
+
     return;
 }
 
